@@ -8,7 +8,8 @@ import {
   Upload, Settings, FileSpreadsheet, Download, Plus,
   LayoutDashboard, Table as TableIcon, Layers,
   ArrowUpRight, ArrowDownRight, Briefcase, X, Save, PlusCircle, CalendarDays,
-  Rocket, TrendingDown, Gauge, Percent, Info, HelpCircle, BarChart3
+  Rocket, TrendingDown, Gauge, Percent, Info, HelpCircle, BarChart3,
+  Car, ExternalLink, FileDown, FileUp
 } from 'lucide-react';
 
 // --- VISUAL CONFIGURATION ---
@@ -63,6 +64,50 @@ const parseCSVLine = (text) => {
   }
   result.push(cell.trim());
   return result.map(c => c.replace(/^"|"$/g, '').replace(/""/g, '"'));
+};
+
+const CAR_DATA_TXT_KEY = 'cfo_car_data_txt';
+
+const serializeCarDataToTxt = (carData) => {
+  const payload = [
+    `model=${carData.model || ''}`,
+    `purchaseDate=${carData.purchaseDate || ''}`,
+    `purchasePrice=${carData.purchasePrice || 0}`,
+    `estimatedMarketValue=${carData.estimatedMarketValue || 0}`,
+    `sourceUrl=${carData.sourceUrl || ''}`,
+  ];
+  return payload.join('\n');
+};
+
+const parseCarDataFromTxt = (txt) => {
+  const defaults = {
+    model: '',
+    purchaseDate: '',
+    purchasePrice: 0,
+    estimatedMarketValue: 0,
+    sourceUrl: 'https://www.kbb.com/',
+  };
+  if (!txt) return defaults;
+  const rows = txt.split(/\r?\n/).filter(Boolean);
+  const parsed = { ...defaults };
+  rows.forEach((row) => {
+    const [rawKey, ...rest] = row.split('=');
+    const key = (rawKey || '').trim();
+    const value = rest.join('=').trim();
+    if (!key) return;
+    if (['purchasePrice', 'estimatedMarketValue'].includes(key)) parsed[key] = cleanNumber(value);
+    else parsed[key] = value;
+  });
+  return parsed;
+};
+
+const estimateDepreciatedValue = (purchasePrice, purchaseDate) => {
+  if (!purchasePrice || !purchaseDate) return 0;
+  const purchase = new Date(purchaseDate);
+  if (Number.isNaN(purchase.getTime())) return 0;
+  const years = Math.max(0, (Date.now() - purchase.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+  const estimated = purchasePrice * Math.pow(0.86, years);
+  return Math.max(0, estimated);
 };
 
 // --- COMPONENTS ---
@@ -217,6 +262,60 @@ const EntryModal = ({ isOpen, onClose, columns, onSave, onAddColumn }) => {
   );
 };
 
+const CarValueCard = ({ carData, onChange, onExportTxt, onImportTxt }) => {
+  const importRef = useRef(null);
+  const autoEstimatedValue = useMemo(
+    () => estimateDepreciatedValue(carData.purchasePrice, carData.purchaseDate),
+    [carData.purchasePrice, carData.purchaseDate]
+  );
+  const marketValue = carData.estimatedMarketValue > 0 ? carData.estimatedMarketValue : autoEstimatedValue;
+  const deltaVsBuy = marketValue - (carData.purchasePrice || 0);
+
+  return (
+    <div className="bg-slate-900/40 backdrop-blur-sm rounded-3xl border border-slate-800/60 p-6 shadow-2xl">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h3 className="font-bold text-white text-lg flex items-center gap-2"><Car className="w-5 h-5 text-cyan-400" /> Car Value</h3>
+          <p className="text-xs text-slate-400 mt-1">Auto-saved as TXT format and loaded on dashboard startup.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={onExportTxt} className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold">
+            <FileDown className="w-3.5 h-3.5" /> TXT
+          </button>
+          <button onClick={() => importRef.current?.click()} className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold">
+            <FileUp className="w-3.5 h-3.5" /> Load TXT
+          </button>
+          <input ref={importRef} type="file" accept=".txt" className="hidden" onChange={onImportTxt} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+        <input value={carData.model} onChange={(e) => onChange('model', e.target.value)} placeholder="Model (e.g. Tesla Model 3)" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-sm" />
+        <input type="date" value={carData.purchaseDate} onChange={(e) => onChange('purchaseDate', e.target.value)} className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-sm" />
+        <input type="number" min="0" value={carData.purchasePrice || ''} onChange={(e) => onChange('purchasePrice', cleanNumber(e.target.value))} placeholder="Purchase price" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-sm" />
+        <input type="number" min="0" value={carData.estimatedMarketValue || ''} onChange={(e) => onChange('estimatedMarketValue', cleanNumber(e.target.value))} placeholder="Current market value" className="bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white text-sm" />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="bg-slate-950/50 rounded-xl border border-slate-800 p-3">
+          <p className="text-[10px] text-slate-500 uppercase font-bold">Current Value</p>
+          <p className="text-xl font-bold text-cyan-300 font-mono">{formatCurrency(marketValue)}</p>
+        </div>
+        <div className="bg-slate-950/50 rounded-xl border border-slate-800 p-3">
+          <p className="text-[10px] text-slate-500 uppercase font-bold">P/L vs Buy</p>
+          <p className={`text-xl font-bold font-mono ${deltaVsBuy >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatDelta(deltaVsBuy)}</p>
+        </div>
+        <div className="bg-slate-950/50 rounded-xl border border-slate-800 p-3 flex flex-col justify-between">
+          <p className="text-[10px] text-slate-500 uppercase font-bold">Official Source</p>
+          <a href={carData.sourceUrl || 'https://www.kbb.com/'} target="_blank" rel="noreferrer" className="text-cyan-300 text-xs font-semibold inline-flex items-center gap-1 hover:text-cyan-200">
+            Open valuation site <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [activeView, setActiveView] = useState('dashboard');
   const [timeFrame, setTimeFrame] = useState('month'); 
@@ -226,6 +325,7 @@ export default function App() {
   const [showConfig, setShowConfig] = useState(false);
   const [showEntry, setShowEntry] = useState(false);
   const [expectedGrowth, setExpectedGrowth] = useState(7.0); 
+  const [carData, setCarData] = useState(() => parseCarDataFromTxt(localStorage.getItem(CAR_DATA_TXT_KEY)));
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -317,6 +417,39 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  const handleCarFieldChange = (field, value) => {
+    setCarData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleExportCarTxt = () => {
+    const txtPayload = serializeCarDataToTxt(carData);
+    const blob = new Blob([txtPayload], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'car_data.txt');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportCarTxt = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const parsed = parseCarDataFromTxt(evt.target?.result || '');
+      setCarData((prev) => ({ ...prev, ...parsed }));
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  useEffect(() => {
+    localStorage.setItem(CAR_DATA_TXT_KEY, serializeCarDataToTxt(carData));
+  }, [carData]);
+
   // --- FILTERING ---
   const filteredRecords = useMemo(() => {
     if (selectedYear === 'all') return records;
@@ -338,6 +471,10 @@ export default function App() {
         if (col.type === 'liability') stats.liability += Math.abs(val);
         else stats[col.type] += val;
       });
+      const carMarketValue = carData.estimatedMarketValue > 0
+        ? carData.estimatedMarketValue
+        : estimateDepreciatedValue(carData.purchasePrice, carData.purchaseDate);
+      stats.other += carMarketValue;
       const liquidity = stats.cash + stats.fixed; 
       const totalAssets = stats.equity + stats.fixed + stats.cash + stats.other;
       const netWorth = totalAssets - stats.liability;
@@ -357,7 +494,7 @@ export default function App() {
        groups[key] = { ...c, displayDate: key };
     });
     return Object.values(groups).sort((a,b) => a.date - b.date);
-  }, [filteredRecords, columns, timeFrame]);
+  }, [filteredRecords, columns, timeFrame, carData]);
 
   // --- METRICS ---
   const metrics = useMemo(() => {
@@ -510,12 +647,14 @@ export default function App() {
                </div>
 
                {/* KPIS */}
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                   <KpiCard title="Net Worth" value={formatCurrency(metrics.nw.val)} subvalue="Total Equity" trendAmt={metrics.nw.amt} trendPct={metrics.nw.pct} color={COLORS.equity} icon={TrendingUp} />
                   <KpiCard title="Total Assets" value={formatCurrency(metrics.assets.val)} subvalue="Gross Assets" trendAmt={metrics.assets.amt} trendPct={metrics.assets.pct} color={COLORS.fixed} icon={Briefcase} />
                   <KpiCard title="Total Debt" value={formatCurrency(metrics.debt.val)} subvalue="Liabilities" trendAmt={metrics.debt.amt} trendPct={metrics.debt.pct} color={COLORS.liability} icon={CreditCard} isNegativeBad={true} />
                   <KpiCard title="Total Liquidity" value={formatCurrency(metrics.liquidity.val)} subvalue="Cash + HYSA" trendAmt={metrics.liquidity.amt} trendPct={metrics.liquidity.pct} color={COLORS.cash} icon={DollarSign} />
                </div>
+
+               <CarValueCard carData={carData} onChange={handleCarFieldChange} onExportTxt={handleExportCarTxt} onImportTxt={handleImportCarTxt} />
 
                {/* DEBT RATIOS CENTERED */}
                <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl mx-auto">
