@@ -101,11 +101,13 @@ const parseCarDataFromTxt = (txt) => {
   return parsed;
 };
 
-const estimateDepreciatedValue = (purchasePrice, purchaseDate) => {
+const estimateDepreciatedValue = (purchasePrice, purchaseDate, valuationDate = new Date()) => {
   if (!purchasePrice || !purchaseDate) return 0;
   const purchase = new Date(purchaseDate);
   if (Number.isNaN(purchase.getTime())) return 0;
-  const years = Math.max(0, (Date.now() - purchase.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
+  const valuation = valuationDate instanceof Date ? valuationDate : new Date(valuationDate);
+  if (Number.isNaN(valuation.getTime())) return 0;
+  const years = Math.max(0, (valuation.getTime() - purchase.getTime()) / (1000 * 60 * 60 * 24 * 365.25));
   const estimated = purchasePrice * Math.pow(0.86, years);
   return Math.max(0, estimated);
 };
@@ -265,7 +267,7 @@ const EntryModal = ({ isOpen, onClose, columns, onSave, onAddColumn }) => {
 const CarValueCard = ({ carData, onChange, onExportTxt, onImportTxt }) => {
   const importRef = useRef(null);
   const autoEstimatedValue = useMemo(
-    () => estimateDepreciatedValue(carData.purchasePrice, carData.purchaseDate),
+    () => estimateDepreciatedValue(carData.purchasePrice, carData.purchaseDate, new Date()),
     [carData.purchasePrice, carData.purchaseDate]
   );
   const marketValue = carData.estimatedMarketValue > 0 ? carData.estimatedMarketValue : autoEstimatedValue;
@@ -471,9 +473,16 @@ export default function App() {
         if (col.type === 'liability') stats.liability += Math.abs(val);
         else stats[col.type] += val;
       });
-      const carMarketValue = carData.estimatedMarketValue > 0
-        ? carData.estimatedMarketValue
-        : estimateDepreciatedValue(carData.purchasePrice, carData.purchaseDate);
+      let carMarketValue = 0;
+      const hasManualMarketValue = carData.estimatedMarketValue > 0;
+      if (carData.purchaseDate) {
+        const purchaseDate = new Date(carData.purchaseDate);
+        if (!Number.isNaN(purchaseDate.getTime()) && r.date >= purchaseDate) {
+          carMarketValue = hasManualMarketValue
+            ? carData.estimatedMarketValue
+            : estimateDepreciatedValue(carData.purchasePrice, carData.purchaseDate, r.date);
+        }
+      }
       stats.other += carMarketValue;
       const liquidity = stats.cash + stats.fixed; 
       const totalAssets = stats.equity + stats.fixed + stats.cash + stats.other;
