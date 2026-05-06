@@ -39,6 +39,7 @@ const formatCurrency = (val) => new Intl.NumberFormat('en-US', { style: 'currenc
 const formatK = (val) => `$${(val / 1000).toFixed(0)}k`;
 const formatPercent = (val) => `${(val * 100).toFixed(2)}%`;
 const formatDelta = (val) => val > 0 ? `+${formatCurrency(val)}` : formatCurrency(val);
+const formatSignedPercent = (val) => `${val > 0 ? '+' : ''}${formatPercent(val)}`;
 
 const cleanNumber = (val) => {
   if (typeof val === 'number') return val;
@@ -580,6 +581,19 @@ export default function App() {
         return { ...d, drawdown: localMaxNW > 0 ? (d.netWorth - localMaxNW) / localMaxNW : 0 };
     });
 
+    const growthSeries = ddSeries.map((d, idx) => {
+        const previousPeriod = idx > 0 ? ddSeries[idx - 1] : null;
+        const netWorthGrowth = previousPeriod ? d.netWorth - previousPeriod.netWorth : null;
+        const liquidityGrowth = previousPeriod ? d.liquidity - previousPeriod.liquidity : null;
+        return {
+          ...d,
+          netWorthGrowth,
+          liquidityGrowth,
+          netWorthGrowthPct: previousPeriod && previousPeriod.netWorth !== 0 ? netWorthGrowth / Math.abs(previousPeriod.netWorth) : null,
+          liquidityGrowthPct: previousPeriod && previousPeriod.liquidity !== 0 ? liquidityGrowth / Math.abs(previousPeriod.liquidity) : null,
+        };
+    });
+
     return {
       nw: calc('netWorth'),
       assets: calc('totalAssets'),
@@ -600,7 +614,8 @@ export default function App() {
          yearsToCrossover,
          phaseProgress
       },
-      ddSeries
+      ddSeries,
+      growthSeries
     };
   }, [data, records, expectedGrowth, columns]);
 
@@ -775,6 +790,49 @@ export default function App() {
                                <Bar dataKey="other" name="Other" stackId="a" fill={COLORS.other} />
                                <Bar dataKey="liability" name="Liabilities" stackId="b" fill={COLORS.liability} radius={[4,4,0,0]} />
                             </BarChart>
+                          </ResponsiveContainer>
+                       </div>
+                    </div>
+
+                    <div className="bg-slate-900/40 backdrop-blur-sm rounded-3xl border border-slate-800/60 p-6 h-[500px] flex flex-col shadow-2xl">
+                       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-6">
+                          <div>
+                             <h3 className="font-bold text-white text-lg flex items-center gap-2"><Activity className="w-5 h-5 text-emerald-400"/> Net Worth & Liquidity Growth</h3>
+                             <p className="text-xs text-slate-500 mt-1">Period-over-period change based on the selected {timeFrame === 'month' ? 'monthly' : timeFrame === 'quarter' ? 'quarterly' : 'yearly'} view.</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                             <div className="bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2">
+                                <p className="text-slate-500 uppercase font-bold text-[10px]">Latest NW Growth</p>
+                                <p className={`font-mono font-bold ${metrics.nw.amt >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatDelta(metrics.nw.amt)}</p>
+                             </div>
+                             <div className="bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2">
+                                <p className="text-slate-500 uppercase font-bold text-[10px]">Latest Liquidity</p>
+                                <p className={`font-mono font-bold ${metrics.liquidity.amt >= 0 ? 'text-cyan-300' : 'text-rose-400'}`}>{formatDelta(metrics.liquidity.amt)}</p>
+                             </div>
+                          </div>
+                       </div>
+                       <div className="flex-1 min-h-0">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={metrics.growthSeries} margin={{top:10, right:10, left:0, bottom:0}}>
+                               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                               <XAxis dataKey="displayDate" stroke="#64748b" tick={{fontSize: 10}} minTickGap={30} />
+                               <YAxis yAxisId="left" stroke="#64748b" tick={{fontSize: 10}} tickFormatter={formatK} />
+                               <YAxis yAxisId="right" orientation="right" stroke="#94a3b8" tick={{fontSize: 10}} tickFormatter={formatPercent} />
+                               <ReferenceLine yAxisId="left" y={0} stroke="#475569" strokeDasharray="4 4" />
+                               <Tooltip
+                                  contentStyle={{backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px'}}
+                                  formatter={(val, name) => {
+                                    if (val === null || val === undefined) return ['—', name];
+                                    const isPct = name.includes('%');
+                                    return [isPct ? formatSignedPercent(val) : formatDelta(val), name];
+                                  }}
+                               />
+                               <Legend />
+                               <Bar yAxisId="left" dataKey="netWorthGrowth" name="Net Worth Growth" fill={COLORS.equity} radius={[4,4,0,0]} />
+                               <Bar yAxisId="left" dataKey="liquidityGrowth" name="Liquidity Growth" fill={COLORS.cash} radius={[4,4,0,0]} />
+                               <Line yAxisId="right" type="monotone" dataKey="netWorthGrowthPct" name="Net Worth Growth %" stroke={COLORS.returns} strokeWidth={2} dot={false} connectNulls />
+                               <Line yAxisId="right" type="monotone" dataKey="liquidityGrowthPct" name="Liquidity Growth %" stroke="#67e8f9" strokeWidth={2} dot={false} connectNulls />
+                            </ComposedChart>
                           </ResponsiveContainer>
                        </div>
                     </div>
