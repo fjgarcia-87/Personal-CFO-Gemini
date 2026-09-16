@@ -3,7 +3,8 @@ import { CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveCo
 import { Target, TrendingUp, Waves } from 'lucide-react';
 import {
   FIRE_DEFAULTS, FIRE_STORAGE_KEY, MAX_PROJECTION_AGE, dateAfterMonths,
-  estimatePortfolioContribution, portfolioAssets, portfolioHistory, projectFire, readFireSettings,
+  accountAnnualRate, effectiveAnnualRate, estimatePortfolioContribution, monthlyRate,
+  portfolioAssets, portfolioHistory, projectFire, readFireSettings, weightedReturns,
 } from './fire.js';
 import './FirePlanner.css';
 
@@ -36,6 +37,9 @@ export default function FirePlanner({ records, columns }) {
   const latest = history.snapshots.at(-1);
   const assets = useMemo(() => portfolioAssets(history.selected, latest, settings), [history.selected, latest, settings]);
   const estimate = useMemo(() => estimatePortfolioContribution(history.snapshots, assets), [history.snapshots, assets]);
+  const fixedAndHysa = assets.filter(asset => ['fixed', 'cash'].includes(asset.type));
+  const blendedSafeReturn = weightedReturns(fixedAndHysa);
+  const blendedPortfolioReturn = weightedReturns(assets);
   const contribution = settings.contributionMode === 'manual' ? settings.monthlyContribution : estimate?.monthly;
   const projection = useMemo(() => projectFire({
     ...settings, startingBalance: latest?.balance, monthlyContribution: contribution, assets,
@@ -43,7 +47,15 @@ export default function FirePlanner({ records, columns }) {
   const valid = projection.errors.length === 0;
   const selectedNames = history.selected.map(column => column.name);
   const toggleAccount = name => update('accountNames', selectedNames.includes(name) ? selectedNames.filter(item => item !== name) : [...selectedNames, name]);
-  const rateFor = column => settings.accountReturns[column.name] ?? (column.type === 'equity' ? settings.annualReturn : column.type === 'fixed' ? settings.fixedReturn : 0);
+  const rateFor = column => {
+    const rate = accountAnnualRate(column, settings);
+    return typeof rate === 'number' && Number.isFinite(rate) ? Number(rate.toFixed(6)) : '';
+  };
+  const changeHysaPeriod = period => setSettings(previous => {
+    const annual = effectiveAnnualRate(previous.hysaReturn, previous.hysaReturnPeriod);
+    const converted = period === 'monthly' ? monthlyRate(annual) * 100 : annual;
+    return { ...previous, hysaReturnPeriod: period, hysaReturn: Number.isFinite(converted) ? Number(converted.toFixed(8)) : '' };
+  });
   const setAccountRate = (name, value) => setSettings(previous => {
     const rates = { ...previous.accountReturns };
     if (value === '') delete rates[name]; else rates[name] = value;
@@ -69,7 +81,9 @@ export default function FirePlanner({ records, columns }) {
 
       <div className="fire-assumptions">
         <NumberField label="Stock return default · % / year" value={settings.annualReturn} onChange={value => update('annualReturn', value)} min="-50" max="50" step="0.1" />
-        <NumberField label="Fixed income default · % / year" value={settings.fixedReturn} onChange={value => update('fixedReturn', value)} min="-50" max="50" step="0.1" />
+        <NumberField label="Fixed income average · % / year" value={settings.fixedReturn} onChange={value => update('fixedReturn', value)} min="-50" max="50" step="0.1" />
+        <NumberField label={`HYSA / cash average · % / ${settings.hysaReturnPeriod === 'monthly' ? 'month' : 'year'}`} value={settings.hysaReturn} onChange={value => update('hysaReturn', value)} min="0" max={settings.hysaReturnPeriod === 'monthly' ? '3.4366' : '50'} step="0.01" />
+        <label className="fire-field"><span>HYSA rate period</span><select aria-label="HYSA rate period" value={settings.hysaReturnPeriod} onChange={event => changeHysaPeriod(event.target.value)}><option value="monthly">Monthly rate (%)</option><option value="annual">Annual APY (%)</option></select></label>
         <NumberField label="Inflation · % / year" value={settings.inflation} onChange={value => update('inflation', value)} min="0" max="25" step="0.1" />
         <label className="fire-field"><span>Monthly contribution source</span><select aria-label="Monthly contribution source" value={settings.contributionMode} onChange={event => update('contributionMode', event.target.value)}><option value="history">Estimate from history</option><option value="manual">Enter actual contribution</option></select></label>
         {settings.contributionMode === 'manual' && <NumberField label="Monthly contribution · USD" value={settings.monthlyContribution} onChange={value => update('monthlyContribution', value)} step="100" placeholder="0" />}
@@ -78,17 +92,22 @@ export default function FirePlanner({ records, columns }) {
       <div className="fire-input-summary">
         <div><span>Selected investments</span><strong>{money(latest?.balance ?? 0)}</strong></div>
         <div><span>{settings.contributionMode === 'history' ? 'Estimated monthly net contribution' : 'Monthly net contribution'}</span><strong>{typeof contribution === 'number' ? money(contribution) : 'More data needed'}</strong></div>
-        <div><span>Fixed income included</span><strong>{money(assets.filter(asset => history.selected.find(column => column.id === asset.id)?.type === 'fixed').reduce((sum, asset) => sum + asset.balance, 0))}</strong></div>
+        <div><span>Fixed income + HYSA / cash</span><strong>{money(fixedAndHysa.reduce((sum, asset) => sum + asset.balance, 0))}</strong></div>
       </div>
+      <div className="fire-weighted-rates" aria-live="polite">
+        <div><span>Weighted rate · fixed income + HYSA / cash</span><strong data-testid="fire-fixed-hysa-weighted">{blendedSafeReturn ? `${blendedSafeReturn.annual.toFixed(2)}% APY` : 'No funded accounts'}</strong><small>{blendedSafeReturn ? `${blendedSafeReturn.monthly.toFixed(3)}% for the first month · ${money(blendedSafeReturn.monthlyInterest)} estimated interest` : 'Select funded accounts and enter valid rates.'}</small></div>
+        <div><span>Weighted rate · all selected investments</span><strong data-testid="fire-portfolio-weighted">{blendedPortfolioReturn ? `${blendedPortfolioReturn.annual.toFixed(2)}% / year` : 'No funded accounts'}</strong><small>Based on the latest balances and each account's effective annual rate.</small></div>
+      </div>
+      <p className="fire-note">Enter an average rate for fixed income and for HYSA / cash, or override individual accounts below. HYSA starts at 0% until you enter your rate. Interest paid monthly can still be quoted by your bank as an annual APY: choose the matching period. The combined rate is weighted by balance, not a simple average of the two rates.</p>
       <p className="fire-note">{estimate ? `Estimate uses ${estimate.intervals} intervals over ${estimate.months} months (${monthDate(estimate.start)}–${monthDate(estimate.end)}), subtracting each account's assumed growth from balance changes.` : 'At least two different months are needed to estimate contributions. You can enter the actual monthly amount instead.'} Balance changes can include transfers and market gains; this is an estimate, not a recorded contribution.</p>
 
       <details className="fire-details">
         <summary>Investment accounts & individual interest rates ({history.selected.length} selected)</summary>
-        <p className="fire-note">Stocks and fixed income are selected by default. Cash can be included here; vehicles, other assets and debts are excluded by default. Rates are effective annual rates with reinvested returns. The 7% stock and 4% fixed income defaults are assumptions, not rates read from your CSV. Enter each account's contracted APY where applicable; clearing an override restores its category default.</p>
+        <p className="fire-note">Stocks, fixed income and cash accounts named HYSA, high yield, Marcus or savings are selected by default. Review the selection below and include any other interest-bearing cash accounts. Vehicles, other assets and debts are excluded by default. Individual overrides are effective annual rates (APY), with reinvested returns. The 7% stock and 4% fixed income defaults are assumptions, not rates read from your CSV. Clearing an override restores its group average.</p>
         <div className="fire-account-list">
           {columns.filter(column => column.type !== 'liability').map(column => (
             <div className="fire-account" key={column.id}>
-              <label><input type="checkbox" checked={selectedNames.includes(column.name)} onChange={() => toggleAccount(column.name)} /><span>{column.name}<small>{column.type === 'fixed' ? 'Fixed income' : column.type}</small></span></label>
+              <label><input type="checkbox" aria-label={`Include ${column.name}`} checked={selectedNames.includes(column.name)} onChange={() => toggleAccount(column.name)} /><span>{column.name}<small>{column.type === 'fixed' ? 'Fixed income' : column.type === 'cash' ? 'HYSA / cash' : column.type}</small></span></label>
               <NumberField label={`${column.name} · annual %`} value={rateFor(column)} onChange={value => setAccountRate(column.name, value)} min="-50" max="50" step="0.1" disabled={!selectedNames.includes(column.name)} />
             </div>
           ))}

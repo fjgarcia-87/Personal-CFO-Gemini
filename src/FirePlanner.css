@@ -61,8 +61,12 @@
 .fire-method p { line-height: 1.8; margin: 12px 0 0; color: #94a3b8; }
 .fire-method a { color: #5eead4; text-decoration: underline; }
 .fire-save-note { text-align: right; font-size: 10px; color: #94a3b8; margin: 16px 0 0; }
+.fire-weighted-rates { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; padding: 16px; background: #134e4a22; border: 1px solid #2dd4bf33; border-radius: 12px; }
+.fire-weighted-rates span, .fire-weighted-rates small { display: block; color: #94a3b8; font-size: 11px; line-height: 1.6; }
+.fire-weighted-rates strong { display: block; color: #5eead4; font-size: 22px; margin: 5px 0; }
 @media (max-width: 900px) { .fire-assumptions { grid-template-columns: 1fr 1fr; } .fire-header { flex-wrap: wrap; } .fire-account-list { grid-template-columns: 1fr; } }
 @media (max-width: 600px) {
+  .fire-weighted-rates { grid-template-columns: 1fr; }
   .fire-planner { padding: 18px 14px; border-radius: 18px; }
   .fire-header h2 { font-size: 23px; }
   .fire-goal-fields { grid-template-columns: 1fr 1fr; padding: 12px; gap: 12px; }
@@ -82,3 +86,9 @@
   .fire-account { flex-wrap: wrap; }
   .fire-save-note { text-align: left; line-height: 1.7; }
 }
+.fire-disclosure { border: 1px solid #334155; border-radius: 14px; overflow: hidden; background: #0f172a66; }
+.fire-disclosure-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 16px 20px; color: #cbd5e1; font-size: 13px; font-weight: 600; background: transparent; cursor: pointer; text-align: left; }
+.fire-disclosure-toggle:hover { color: #f8fafc; background: #1e293b66; }
+.fire-disclosure-toggle:focus-visible { outline: 2px solid #5eead4; outline-offset: -4px; }
+.fire-disclosure-toggle > span:last-child { font-size: 20px; font-weight: 400; }
+.fire-disclosure .fire-planner { border-radius: 0; border-width: 1px 0 0; }

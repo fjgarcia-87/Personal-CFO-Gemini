@@ -4,6 +4,8 @@ export const FIRE_DEFAULTS = {
   fireGoal: 2_000_000,
   annualReturn: 7,
   fixedReturn: 4,
+  hysaReturn: 0,
+  hysaReturnPeriod: 'monthly',
   inflation: 2.5,
   contributionMode: 'history',
   monthlyContribution: '',
@@ -19,10 +21,11 @@ export function readFireSettings(storage) {
     const saved = JSON.parse(storage.getItem(FIRE_STORAGE_KEY));
     if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return { ...FIRE_DEFAULTS };
     const settings = { ...FIRE_DEFAULTS };
-    for (const key of ['currentAge', 'targetAge', 'fireGoal', 'annualReturn', 'fixedReturn', 'inflation', 'monthlyContribution']) {
+    for (const key of ['currentAge', 'targetAge', 'fireGoal', 'annualReturn', 'fixedReturn', 'hysaReturn', 'inflation', 'monthlyContribution']) {
       if (saved[key] === '' || (typeof saved[key] === 'number' && Number.isFinite(saved[key]))) settings[key] = saved[key];
     }
     settings.contributionMode = saved.contributionMode === 'manual' ? 'manual' : 'history';
+    settings.hysaReturnPeriod = saved.hysaReturnPeriod === 'annual' ? 'annual' : 'monthly';
     if (Array.isArray(saved.accountNames) && saved.accountNames.every(name => typeof name === 'string')) {
       settings.accountNames = saved.accountNames;
     }
@@ -37,6 +40,31 @@ export function readFireSettings(storage) {
 
 export const monthlyRate = annualPercent => Math.expm1(Math.log1p(annualPercent / 100) / 12);
 
+export function effectiveAnnualRate(value, period = 'annual') {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= -100) return NaN;
+  return period === 'monthly' ? Math.expm1(12 * Math.log1p(value / 100)) * 100 : value;
+}
+
+export function isHysaAccount(column) {
+  return column.type === 'cash' && /\bhysa\b|high[\s-]*yield|marcus|savings|ahorro/i.test(column.name);
+}
+
+export function accountAnnualRate(column, settings) {
+  return settings.accountReturns[column.name] ?? (column.type === 'equity' ? settings.annualReturn
+    : column.type === 'fixed' ? settings.fixedReturn
+      : column.type === 'cash' ? effectiveAnnualRate(settings.hysaReturn, settings.hysaReturnPeriod) : 0);
+}
+
+// Both rates use the same current balances as weights, after converting each
+// account rate to the corresponding period. The APY is not the monthly mean * 12.
+export function weightedReturns(assets) {
+  const balance = assets.reduce((sum, asset) => sum + Math.max(0, asset.balance), 0);
+  if (!balance || assets.some(asset => !Number.isFinite(asset.balance) || asset.balance < 0 || typeof asset.annualReturn !== 'number' || !Number.isFinite(asset.annualReturn) || asset.annualReturn <= -100)) return null;
+  const annual = assets.reduce((sum, asset) => sum + asset.balance / balance * asset.annualReturn, 0);
+  const monthly = assets.reduce((sum, asset) => sum + asset.balance / balance * monthlyRate(asset.annualReturn) * 100, 0);
+  return { balance, annual, monthly, monthlyInterest: balance * monthly / 100 };
+}
+
 // End-of-month contributions, with a stable zero-rate limit.
 export function annuityFactor(rate, months) {
   return Math.abs(rate) < 1e-12 ? months : Math.expm1(months * Math.log1p(rate)) / rate;
@@ -44,7 +72,7 @@ export function annuityFactor(rate, months) {
 
 export function portfolioHistory(records, columns, accountNames = null) {
   const selected = columns.filter(column => column.type !== 'liability' && (
-    accountNames === null ? ['equity', 'fixed'].includes(column.type) : accountNames.includes(column.name)
+    accountNames === null ? ['equity', 'fixed'].includes(column.type) || isHysaAccount(column) : accountNames.includes(column.name)
   ));
   const byMonth = new Map();
   for (const record of [...records].sort((a, b) => a.date - b.date)) {
@@ -67,8 +95,8 @@ export function portfolioAssets(selected, latest, settings) {
   return selected.map(column => {
     const balance = latest?.balances[column.id] ?? 0;
     return {
-      id: column.id, name: column.name, balance,
-      annualReturn: settings.accountReturns[column.name] ?? (column.type === 'equity' ? settings.annualReturn : column.type === 'fixed' ? settings.fixedReturn : 0),
+      id: column.id, name: column.name, type: column.type, balance,
+      annualReturn: accountAnnualRate(column, settings),
       weight: total > 0 ? Math.max(0, balance) / total : 1 / selected.length,
     };
   });

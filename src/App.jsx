@@ -152,6 +152,79 @@ const KpiCard = ({ title, value, subvalue, trendPct, trendAmt, icon: Icon, color
   );
 };
 
+const ProjectionCard = ({ metrics, growthRate, setGrowthRate }) => {
+  const { currentNW, monthlyContribution, crossoverDate, yearsToCrossover, phaseProgress } = metrics.compound;
+  const [showInfo, setShowInfo] = useState(false);
+  
+  return (
+    <div className="bg-slate-900/80 rounded-xl border border-slate-700 p-6 flex flex-col h-full relative overflow-hidden">
+      <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
+      
+      <div className="relative z-10 flex-none mb-4">
+        <div className="flex justify-between items-center mb-4">
+           <h3 className="text-white font-bold text-lg flex items-center gap-2">
+             <Rocket className="w-6 h-6 text-orange-400" /> Compound Phase
+           </h3>
+           <button onClick={() => setShowInfo(!showInfo)} className="text-slate-400 hover:text-white relative">
+             <HelpCircle className="w-4 h-4" />
+             {showInfo && (
+               <div className="absolute right-0 top-6 w-64 p-3 bg-slate-800 border border-slate-600 rounded-lg text-[10px] text-slate-300 shadow-xl z-50 text-left">
+                 <p className="mb-2"><strong className="text-emerald-400">Linear Phase:</strong> Work income {'>'} Returns.</p>
+                 <p className="mb-2"><strong className="text-orange-400">Exponential Phase:</strong> Returns {'>'} Work income.</p>
+               </div>
+             )}
+           </button>
+        </div>
+        
+        <div className="flex items-center gap-3 bg-slate-800/50 p-3 rounded-lg border border-slate-700/50 mb-6">
+           <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold whitespace-nowrap">Exp. Return:</span>
+           <input type="range" min="1" max="15" step="0.5" value={growthRate} onChange={(e) => setGrowthRate(parseFloat(e.target.value))} className="flex-1 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500"/>
+           <span className="bg-slate-900 px-2 py-0.5 rounded border border-slate-600 font-mono font-bold text-violet-400 text-xs w-12 text-center">{growthRate}%</span>
+        </div>
+
+        <div className="mb-2">
+          <div className="flex justify-between text-[10px] text-slate-400 mb-1 font-medium uppercase tracking-wider">
+            <span>Linear Phase</span>
+            <span>Exponential Phase</span>
+          </div>
+          <div className="h-6 bg-slate-800 rounded-full overflow-hidden border border-slate-700 relative shadow-inner">
+            <div className="h-full bg-gradient-to-r from-blue-500 via-violet-500 to-orange-500 transition-all duration-1000 ease-out" style={{ width: `${Math.min(100, phaseProgress)}%` }}></div>
+            <div className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_10px_3px_rgba(255,255,255,0.8)]" style={{ left: `${Math.min(100, phaseProgress)}%` }}></div>
+          </div>
+          <div className="text-center mt-2">
+             <span className="text-xs text-slate-400">Current Progress: </span>
+             <span className="text-sm text-white font-bold">{phaseProgress.toFixed(1)}%</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col justify-center py-4">
+        <div className="grid grid-cols-2 gap-4">
+             <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center shadow-sm hover:bg-slate-800/80 transition-colors">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-2">Contribution (Real)</p>
+                <p className="text-xl font-bold text-blue-400 font-mono truncate">{formatCurrency(monthlyContribution)}</p>
+                <p className="text-[9px] text-slate-600 mt-1">Monthly Avg</p>
+             </div>
+             <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 flex flex-col justify-center shadow-sm hover:bg-slate-800/80 transition-colors">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-2">Return (Est.)</p>
+                <p className="text-xl font-bold text-pink-400 font-mono truncate">{formatCurrency(currentNW * (growthRate/100/12))}</p>
+                <p className="text-[9px] text-slate-600 mt-1">This Month</p>
+             </div>
+        </div>
+      </div>
+
+      <div className="bg-slate-800 p-4 rounded-xl border border-slate-600 text-center shrink-0 relative overflow-hidden mt-auto shadow-lg">
+         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-900/50 pointer-events-none"></div>
+         <div className="relative z-10">
+            <p className="text-slate-400 text-[10px] mb-0.5 uppercase tracking-widest font-bold">Est. Crossover Time</p>
+            <div className="text-4xl font-bold text-white tracking-tighter leading-tight mb-1">{yearsToCrossover} <span className="text-lg font-normal text-slate-500">Years</span></div>
+            <p className="text-xs text-emerald-400 font-mono font-bold">{crossoverDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+         </div>
+      </div>
+    </div>
+  );
+};
+
 const ConfigModal = ({ isOpen, onClose, columns, setColumns }) => {
   const [newColName, setNewColName] = useState('');
   const [newColType, setNewColType] = useState('equity');
@@ -249,12 +322,14 @@ const CarValueCard = ({ carData, onChange, onExportTxt, onImportTxt }) => {
 
 export default function App() {
   const [activeView, setActiveView] = useState('dashboard');
+  const [showFire, setShowFire] = useState(false);
   const [timeFrame, setTimeFrame] = useState('month'); 
   const [selectedYear, setSelectedYear] = useState('all');
   const [columns, setColumns] = useState([]);
   const [records, setRecords] = useState([]);
   const [showConfig, setShowConfig] = useState(false);
   const [showEntry, setShowEntry] = useState(false);
+  const [expectedGrowth, setExpectedGrowth] = useState(7.0); 
   const [carData, setCarData] = useState(() => parseCarDataFromTxt(localStorage.getItem(CAR_DATA_TXT_KEY)));
   const fileInputRef = useRef(null);
 
@@ -449,7 +524,39 @@ export default function App() {
     const debtToAssets = curr.totalAssets > 0 ? curr.liability / curr.totalAssets : 0;
     const debtToEquity = curr.netWorth > 0 ? curr.liability / curr.netWorth : 0;
 
+    // Compound Engine
     const sortedRecords = [...records].sort((a,b) => a.date - b.date);
+    const recent = sortedRecords.slice(-12); 
+    let totalContribution = 0;
+    let monthsCount = 0;
+    for (let i = 1; i < recent.length; i++) {
+        const prevR = recent[i-1];
+        const currR = recent[i];
+        let nwPrev = 0, nwCurr = 0;
+        columns.forEach(col => {
+            const valP = prevR[col.id] || 0; const valC = currR[col.id] || 0;
+            if (col.type === 'liability') { nwPrev -= Math.abs(valP); nwCurr -= Math.abs(valC); } else { nwPrev += valP; nwCurr += valC; }
+        });
+        const diffTime = currR.date - prevR.date;
+        const diffMonths = diffTime / (1000 * 60 * 60 * 24 * 30.44);
+        if (diffMonths > 0.5) { 
+            const expectedMarketGrowth = nwPrev * ((expectedGrowth / 100 / 12) * diffMonths);
+            totalContribution += ((nwCurr - nwPrev - expectedMarketGrowth) / diffMonths);
+            monthsCount++;
+        }
+    }
+    const monthlyContribution = monthsCount > 0 ? totalContribution / monthsCount : 0;
+    const currentMonthlyReturn = curr.netWorth * (expectedGrowth / 100 / 12);
+    const phaseProgress = monthlyContribution > 0 ? (currentMonthlyReturn / monthlyContribution) * 100 : 100;
+    
+    let projectedNW = curr.netWorth;
+    let monthsToCross = 0;
+    while(projectedNW * (expectedGrowth/100/12) < monthlyContribution && monthsToCross < 600) {
+        projectedNW += monthlyContribution + (projectedNW * (expectedGrowth/100/12));
+        monthsToCross++;
+    }
+    const crossoverDate = new Date(); crossoverDate.setMonth(crossoverDate.getMonth() + monthsToCross);
+    const yearsToCrossover = (monthsToCross / 12).toFixed(1);
 
     // Advanced Metrics (Calculated on full unfiltered dataset to be accurate)
     // CAGR & MaxDD
@@ -502,10 +609,17 @@ export default function App() {
         { name: 'Cash', value: curr.cash, color: COLORS.cash },
         { name: 'Other Assets', value: curr.other, color: COLORS.other }
       ].filter(x => x.value > 0),
+      compound: {
+         currentNW: curr.netWorth,
+         monthlyContribution,
+         crossoverDate,
+         yearsToCrossover,
+         phaseProgress
+      },
       ddSeries,
       growthSeries
     };
-  }, [data, records, columns]);
+  }, [data, records, expectedGrowth, columns]);
 
   return (
     <div className="min-h-screen bg-[#020617] text-slate-100 font-sans pb-20 selection:bg-violet-500 selection:text-white">
@@ -566,8 +680,6 @@ export default function App() {
                   <KpiCard title="Total Liquidity" value={formatCurrency(metrics.liquidity.val)} subvalue="Cash + HYSA" trendAmt={metrics.liquidity.amt} trendPct={metrics.liquidity.pct} color={COLORS.cash} icon={DollarSign} />
                </div>
 
-               {activeView === 'dashboard' && <FirePlanner records={records} columns={columns} />}
-
                <CarValueCard carData={carData} onChange={handleCarFieldChange} onExportTxt={handleExportCarTxt} onImportTxt={handleImportCarTxt} />
 
                {/* DEBT RATIOS CENTERED */}
@@ -585,7 +697,7 @@ export default function App() {
                {activeView === 'dashboard' && (
                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* NET WORTH & RISK (RESTORED COMPOSED CHART) */}
-                    <div className="lg:col-span-3 bg-slate-900/40 backdrop-blur-sm rounded-3xl border border-slate-800/60 p-6 flex flex-col h-[500px] shadow-2xl">
+                    <div className="lg:col-span-2 bg-slate-900/40 backdrop-blur-sm rounded-3xl border border-slate-800/60 p-6 flex flex-col h-[500px] shadow-2xl">
                        <div className="flex justify-between items-center mb-6"><div><h3 className="font-bold text-white text-lg flex items-center gap-2"><Activity className="w-5 h-5 text-violet-400"/> Net Worth & Risk Profile</h3></div></div>
                        <div className="flex-1 min-h-0">
                           <ResponsiveContainer width="100%" height="100%">
@@ -606,6 +718,9 @@ export default function App() {
                        </div>
                     </div>
 
+                    <div className="h-[500px]">
+                       <ProjectionCard metrics={metrics} growthRate={expectedGrowth} setGrowthRate={setExpectedGrowth} />
+                    </div>
 
                     {/* PIE CHART RESTORED */}
                     <div className="bg-slate-900/40 backdrop-blur-sm rounded-3xl border border-slate-800/60 p-6 h-[400px] flex flex-col shadow-2xl">
@@ -750,6 +865,14 @@ export default function App() {
                      </div>
                   </div>
                )}
+               <section className="fire-disclosure" aria-label="Optional FIRE planner">
+                  <button type="button" className="fire-disclosure-toggle" aria-expanded={showFire} aria-controls="fire-plan-content" onClick={() => setShowFire(open => !open)}>
+                     <span>FIRE & Coast FIRE planner</span><span aria-hidden="true">{showFire ? '−' : '+'}</span>
+                  </button>
+                  <div id="fire-plan-content" hidden={!showFire}>
+                     {showFire && <FirePlanner records={records} columns={columns} />}
+                  </div>
+               </section>
             </div>
          )}
       </main>
