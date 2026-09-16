@@ -16,7 +16,7 @@ npm run build
 
 Import a CSV with `Year`, `Month` and account-balance columns, then enter your age at the latest record. The default target is age **55**, with a **$2,000,000 goal in starting-date purchasing power**. The latest imported record anchors both the age and the dollars called “today” in the planner; it does not silently advance stale balances to the computer's current date. Dashboard year/quarter/month filters do not affect the projection.
 
-The planner replaces the old Compound Phase card and compares:
+The original dashboard, including its Compound Phase / exponential-growth card, remains intact. The FIRE planner is an optional section at the very bottom of the dashboard, Compare and Data views, **collapsed by default**. Its calculations and settings mount only when opened; reloading collapses it again while retaining saved inputs. It compares:
 
 - **Keep contributing:** maintain a fixed nominal monthly amount, with reinvested growth.
 - **Stop contributing now:** no future contributions or withdrawals, with reinvested growth.
@@ -25,9 +25,13 @@ It shows each balance at the selected age, the earliest Coast FIRE month for tha
 
 ### Accounts, returns and contributions
 
-Equity and fixed income accounts are selected by default according to their dashboard categories. Cash and other imported assets can be explicitly selected. Debts and the separate car valuation are not projected as investments. Review imported account categories in Account Management.
+Equity and fixed income accounts are selected by default according to their dashboard categories. Cash accounts named HYSA, high yield, Marcus, savings or ahorro are also included by default. Other cash accounts and imported assets can be explicitly selected. Existing saved account selections are respected. Debts and the separate car valuation are not projected as investments. Review imported account categories in Account Management.
 
-Each account compounds at its own **effective annual rate**, converted with `monthlyRate = (1 + annualRate)^(1/12) - 1`. Fixed income therefore keeps earning reinvested interest even in the zero-contribution scenario. Defaults (7% equity, 4% fixed income, 0% optional cash/other, and 2.5% inflation) are editable assumptions, not contracted rates from the CSV. Account-level overrides allow different CD or savings APYs. The model assumes unchanged rates and reinvestment at maturity; taxes, fees, renewal-rate changes, pensions and living expenses are not modeled.
+Each account compounds at its own **effective annual rate**, converted with `monthlyRate = (1 + annualRate)^(1/12) - 1`. Fixed income and HYSA therefore keep earning reinvested interest even in the zero-contribution scenario. Defaults (7% equity, 4% fixed income, 0% HYSA/cash/other, and 2.5% inflation) are editable assumptions, not contracted rates from the CSV. Enter the average rate for fixed income and HYSA/cash, or override individual accounts with their annual APYs. The model assumes unchanged rates and reinvestment at maturity; taxes, fees, renewal-rate changes, pensions and living expenses are not modeled.
+
+The HYSA input accepts either a **monthly percentage** or an **annual APY**. Monthly rates convert with `annualAPY = (1 + monthlyRate)^12 - 1`; switching units preserves the effective rate. Monthly interest payments do not imply that a bank's advertised APY is a monthly percentage. HYSA starts at zero until the user enters a rate. Per-account annual overrides take precedence over the group rate.
+
+Two balance-weighted summaries show fixed income + HYSA/cash together and all selected investments together: `weightedAnnualRate = sum(balance * accountAPY) / sum(balance)`. The first-month interest estimate separately uses each account's monthly equivalent, weighted by the same balances. These are summaries of the starting mix, not unweighted averages or a single blended rate used for long-term compounding; each account continues to grow separately in the forecast.
 
 The history estimate uses up to 13 monthly snapshots / 12 intervals, keeps the last snapshot in duplicate months, and accounts for missing months. For each interval it subtracts the sum of expected growth at each account's rate. The residual is divided by the sum of contribution annuity factors, weighted by the latest selected portfolio mix. This estimates a constant nominal monthly net contribution; balance changes and transfers cannot uniquely identify actual cash flows. Use the manual contribution input when the real amount is known.
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FIRE_DEFAULTS, dateAfterMonths, estimatePortfolioContribution, portfolioAssets, portfolioHistory, projectFire, readFireSettings } from './fire.js';
+import { FIRE_DEFAULTS, dateAfterMonths, effectiveAnnualRate, estimatePortfolioContribution, portfolioAssets, portfolioHistory, projectFire, readFireSettings, weightedReturns } from './fire.js';
 
 const plan = overrides => projectFire({ ...FIRE_DEFAULTS, currentAge: 40, startingBalance: 500_000, monthlyContribution: 2_000, ...overrides });
 const close = (actual, expected) => assert.ok(Math.abs(actual - expected) <= Math.max(1, Math.abs(expected)) * 1e-8, `${actual} != ${expected}`);
@@ -101,14 +101,14 @@ test('invalid inputs return errors rather than NaN or fictional milestone dates'
   }
 });
 
-test('portfolio selects investments, excludes cash/car/debt and deduplicates months', () => {
+test('portfolio includes savings, excludes car/debt and deduplicates months', () => {
   const records = [
     { date: new Date(2026, 2, 1), stocks: 110, cd: 50, bank: 500, car: 40_000, loan: 30_000 },
     { date: new Date(2026, 0, 31), stocks: 100, cd: 50 },
     { date: new Date(2026, 0, 1), stocks: 90, cd: 50 },
   ];
   const history = portfolioHistory(records, columns);
-  assert.deepEqual(history.snapshots.map(item => item.balance), [150, 160]);
+  assert.deepEqual(history.snapshots.map(item => item.balance), [150, 660]);
   assert.equal(history.snapshots[0].date.getDate(), 31);
   close(portfolioHistory(records, columns, ['Savings']).snapshots.at(-1).balance, 500);
   close(portfolioHistory(records, columns, ['Loan']).snapshots.at(-1).balance, 0);
@@ -155,4 +155,65 @@ test('month-end milestone dates stay in the intended month', () => {
   const result = dateAfterMonths(new Date(2024, 0, 31), 1);
   assert.equal(result.getMonth(), 1);
   assert.equal(result.getDate(), 29);
+});
+
+test('a monthly HYSA rate converts to effective APY through compounding', () => {
+  close(effectiveAnnualRate(0.3, 'monthly'), (1.003 ** 12 - 1) * 100);
+  assert.notEqual(effectiveAnnualRate(0.3, 'monthly'), 3.6);
+  close(effectiveAnnualRate(4, 'annual'), 4);
+  assert.ok(Number.isNaN(effectiveAnnualRate('', 'monthly')));
+});
+
+test('default HYSA selection includes named savings but not ordinary checking', () => {
+  const bankColumns = [
+    { id: 'hysa', name: 'HYSA', type: 'cash' }, { id: 'marcus', name: 'Marcus', type: 'cash' },
+    { id: 'yield', name: 'High Yield Savings', type: 'cash' }, { id: 'checking', name: 'Checking', type: 'cash' },
+  ];
+  const history = portfolioHistory([{ date: new Date(2026, 0, 1), hysa: 100, marcus: 200, yield: 300, checking: 900 }], bankColumns);
+  close(history.snapshots[0].balance, 600);
+  assert.deepEqual(history.selected.map(column => column.id), ['hysa', 'marcus', 'yield']);
+  const explicit = portfolioHistory([{ date: new Date(2026, 0, 1), hysa: 100 }], bankColumns, []);
+  assert.equal(explicit.selected.length, 0, 'Existing explicit selections are preserved');
+});
+
+test('weighted fixed and HYSA rates use account balances and consistent periods', () => {
+  const annualHysa = (1.003 ** 12 - 1) * 100;
+  const assets = [{ balance: 100_000, annualReturn: 5 }, { balance: 300_000, annualReturn: annualHysa }];
+  const summary = weightedReturns(assets);
+  close(summary.annual, (5 + 3 * annualHysa) / 4);
+  close(summary.monthlyInterest, 100_000 * (1.05 ** (1 / 12) - 1) + 300_000 * 0.003);
+  close(summary.monthly, summary.monthlyInterest / 400_000 * 100);
+  assert.notEqual(summary.annual, (5 + annualHysa) / 2);
+  assert.equal(weightedReturns([]), null);
+  assert.equal(weightedReturns([{ balance: 0, annualReturn: 5 }]), null);
+  assert.equal(weightedReturns([{ balance: 100, annualReturn: NaN }]), null);
+});
+
+test('HYSA compounds monthly in both paths and earned interest is not a contribution', () => {
+  const history = portfolioHistory([
+    { date: new Date(2025, 0, 1), bank: 100_000 },
+    { date: new Date(2026, 0, 1), bank: 100_000 * 1.003 ** 12 },
+  ], columns, ['Savings']);
+  const assets = portfolioAssets(history.selected, history.snapshots.at(-1), { ...FIRE_DEFAULTS, hysaReturn: 0.3, hysaReturnPeriod: 'monthly' });
+  close(estimatePortfolioContribution(history.snapshots, assets).monthly, 0);
+  const result = plan({ assets, startingBalance: assets[0].balance, monthlyContribution: 0, inflation: 0, targetAge: 41 });
+  close(result.atTarget.coast, 100_000 * 1.003 ** 24);
+  close(result.atTarget.continuing, result.atTarget.coast);
+});
+
+test('HYSA APY entry and account overrides are not mistaken for monthly percentages', () => {
+  const history = portfolioHistory([{ date: new Date(2026, 0, 1), bank: 100_000 }], columns, ['Savings']);
+  const settings = { ...FIRE_DEFAULTS, hysaReturn: 4.5, hysaReturnPeriod: 'annual' };
+  close(portfolioAssets(history.selected, history.snapshots[0], settings)[0].annualReturn, 4.5);
+  close(portfolioAssets(history.selected, history.snapshots[0], { ...settings, accountReturns: { Savings: 5 } })[0].annualReturn, 5);
+});
+
+test('stored settings retain HYSA units and migrate plans with no HYSA rate', () => {
+  const saved = readFireSettings({ getItem: () => JSON.stringify({ hysaReturn: 4.2, hysaReturnPeriod: 'annual' }) });
+  assert.equal(saved.hysaReturn, 4.2);
+  assert.equal(saved.hysaReturnPeriod, 'annual');
+  const old = readFireSettings({ getItem: () => JSON.stringify({ currentAge: 39, accountNames: ['CD'] }) });
+  assert.equal(old.hysaReturn, 0);
+  assert.equal(old.hysaReturnPeriod, 'monthly');
+  assert.deepEqual(old.accountNames, ['CD']);
 });
