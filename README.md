@@ -1,16 +1,44 @@
-# React + Vite
+# Personal CFO
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React dashboard for imported monthly account balances, with an inflation-adjusted FIRE and Coast FIRE planner.
 
-Currently, two official plugins are available:
+## Run and verify
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```sh
+npm ci
+npm run dev
+npm test
+npm run lint
+npm run build
+```
 
-## React Compiler
+## FIRE and Coast FIRE
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Import a CSV with `Year`, `Month` and account-balance columns, then enter your age at the latest record. The default target is age **55**, with a **$2,000,000 goal in starting-date purchasing power**. The latest imported record anchors both the age and the dollars called “today” in the planner; it does not silently advance stale balances to the computer's current date. Dashboard year/quarter/month filters do not affect the projection.
 
-## Expanding the ESLint configuration
+The planner replaces the old Compound Phase card and compares:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- **Keep contributing:** maintain a fixed nominal monthly amount, with reinvested growth.
+- **Stop contributing now:** no future contributions or withdrawals, with reinvested growth.
+
+It shows each balance at the selected age, the earliest Coast FIRE month for that deadline, and the first month each path reaches full FIRE (searched through age 100). A missed goal is reported explicitly. Reaching the goal is not a withdrawal simulation.
+
+### Accounts, returns and contributions
+
+Equity and fixed income accounts are selected by default according to their dashboard categories. Cash and other imported assets can be explicitly selected. Debts and the separate car valuation are not projected as investments. Review imported account categories in Account Management.
+
+Each account compounds at its own **effective annual rate**, converted with `monthlyRate = (1 + annualRate)^(1/12) - 1`. Fixed income therefore keeps earning reinvested interest even in the zero-contribution scenario. Defaults (7% equity, 4% fixed income, 0% optional cash/other, and 2.5% inflation) are editable assumptions, not contracted rates from the CSV. Account-level overrides allow different CD or savings APYs. The model assumes unchanged rates and reinvestment at maturity; taxes, fees, renewal-rate changes, pensions and living expenses are not modeled.
+
+The history estimate uses up to 13 monthly snapshots / 12 intervals, keeps the last snapshot in duplicate months, and accounts for missing months. For each interval it subtracts the sum of expected growth at each account's rate. The residual is divided by the sum of contribution annuity factors, weighted by the latest selected portfolio mix. This estimates a constant nominal monthly net contribution; balance changes and transfers cannot uniquely identify actual cash flows. Use the manual contribution input when the real amount is known.
+
+Future month-end contributions are split in proportion to the latest selected balances (equally if all are zero), with no rebalancing. Negative contributions represent withdrawals; account balances are floored at zero when exhausted and the UI reports depletion.
+
+### Inflation and COAST
+
+Balances at month `m` are converted to starting-date dollars by dividing by `(1 + inflation)^(m/12)`. The FIRE goal is constant in those dollars; its equivalent future nominal amount increases with inflation. Keeping nominal contributions fixed means their purchasing power gradually declines.
+
+At each month through the target age, Coast FIRE projects every account forward from its current simulated balance with **zero additional contributions**. The first month whose total reaches the inflation-adjusted nominal goal at the deadline is the Coast milestone. The “capital needed now” figure discounts the same goal using each account's growth and the starting portfolio mix, rather than compounding a blended average rate.
+
+Settings, account selections and rate overrides persist in browser local storage. Imported financial balances remain in the existing in-memory CSV workflow; no personal balances are committed to the repository.
+
+Reference: [Investor.gov compound interest calculator](https://www.investor.gov/financial-tools-calculators/calculators/compound-interest-calculator).
